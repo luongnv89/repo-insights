@@ -1,6 +1,21 @@
-# repo-insights
+<p align="center">
+  <img src="assets/logo/logo-full.svg" alt="RepoInsights" width="420">
+</p>
 
-Generate comprehensive GitHub repo insights — real users vs bots, traffic, referrers, and package registry stats. All output written to a clean markdown report.
+<p align="center">
+  <strong>See through the noise. Know your real users.</strong>
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick Start</a> &middot;
+  <a href="#usage">Usage</a> &middot;
+  <a href="#report-sections">Report</a> &middot;
+  <a href="#how-it-works">How it works</a>
+</p>
+
+---
+
+GitHub repo insights that cut through inflated download counts to show you **who actually uses your project**. One command, one markdown report.
 
 ## Why?
 

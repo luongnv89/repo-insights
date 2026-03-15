@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Outer eye shape — two flowing curves forming a lens/eye -->
+  <path d="M56 256 C56 256 140 96 256 96 C372 96 456 256 456 256 C456 256 372 416 256 416 C140 416 56 256 56 256Z" fill="#39FF14"/>
+  <!-- Inner dark iris -->
+  <circle cx="256" cy="256" r="96" fill="#0A0A0A"/>
+  <!-- Bright pupil — the "real signal" -->
+  <circle cx="256" cy="256" r="40" fill="#39FF14"/>
+  <!-- Light reflection — adds life -->
+  <circle cx="232" cy="232" r="14" fill="#FFFFFF" opacity="0.9"/>
+</svg>
