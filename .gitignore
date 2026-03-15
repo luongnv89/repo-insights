@@ -2,3 +2,8 @@
 *_*_*.md
 !README.md
 !TODOS.md
+!CONTRIBUTING.md
+!CODE_OF_CONDUCT.md
+!SECURITY.md
+!docs/*.md
+!.github/**/*.md
