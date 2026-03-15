@@ -7,10 +7,17 @@
 </p>
 
 <p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License"></a>
+  <a href="https://github.com/luongnv89/repo-insights/issues"><img src="https://img.shields.io/github/issues/luongnv89/repo-insights" alt="Issues"></a>
+  <a href="https://github.com/luongnv89/repo-insights/stargazers"><img src="https://img.shields.io/github/stars/luongnv89/repo-insights" alt="Stars"></a>
+</p>
+
+<p align="center">
   <a href="#quick-start">Quick Start</a> &middot;
   <a href="#usage">Usage</a> &middot;
   <a href="#report-sections">Report</a> &middot;
-  <a href="#how-it-works">How it works</a>
+  <a href="#how-it-works">How it works</a> &middot;
+  <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
 ---
@@ -136,6 +143,10 @@ All data comes from public APIs. Traffic data (clones, views, referrers) require
 
 Runs a smoke test that validates the script produces a correctly structured report.
 
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
 ## License
 
-MIT
+[MIT](LICENSE) — Luong NGUYEN
