@@ -25,6 +25,9 @@ gh auth login
 
 # Custom output + verbose
 ./repo-insights.sh -r owner/repo -o report.md -v
+
+# All-time stats (paginated)
+./repo-insights.sh -r owner/repo -a -v
 ```
 
 ## Testing

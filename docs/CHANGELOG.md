@@ -4,7 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-16
+
 ### Added
+- `-a`/`--all` flag for all-time repository statistics
+- `gh_api_all` helper for paginated GitHub API fetching (uses `gh api --paginate --slurp`)
+- All-time package download stats (PyPI overall ~180d, npm full lifetime with chunked requests)
+- Expanded Issues/PRs table with open/closed/merged breakdown in all-time mode
+- All releases shown (not just top 5) in all-time mode
+- Top 25 contributors shown (not just top 10) in all-time mode
+- "Time period" row in report metadata table
+- GitHub traffic API limitation note in all-time mode
+- 5 new tests for all-time mode in `test.sh`
 - Logo and brand assets (neon green theme)
 - OSS community files (CONTRIBUTING, CODE_OF_CONDUCT, SECURITY)
 - GitHub issue and PR templates

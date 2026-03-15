@@ -11,7 +11,7 @@ RepoInsights is a single-file bash script with no external dependencies beyond `
 │  Input       │  Processing   │  Output                │
 │              │               │                        │
 │  CLI flags   │  Fetch data   │  Markdown report       │
-│  -r, -o, -v  │  Extract      │  owner_repo_DATE.md    │
+│  -r,-o,-v,-a │  Extract      │  owner_repo_DATE.md    │
 │              │  Validate     │                        │
 │  Auto-detect │  Generate     │  Terminal summary      │
 │  from git    │               │                        │
@@ -74,6 +74,7 @@ START
 | Function | Purpose |
 |----------|---------|
 | `gh_api` | Wraps `gh api` with fallback default (`{}` or `[]`) |
+| `gh_api_all` | Paginated `gh api --paginate --slurp` with `jq flatten` for all-time mode |
 | `safe_jq` | jq with fallback value on parse failure |
 | `verbose` | Conditional stderr logging |
 | `urlencode` | URL-encode strings for API calls |
