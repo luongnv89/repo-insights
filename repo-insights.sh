@@ -16,6 +16,7 @@ set -euo pipefail
 OUTPUT_FILE=""
 REPO=""
 VERBOSE=false
+ALL_TIME=false
 DATE_NOW=$(date -u +"%Y-%m-%d %H:%M UTC")
 DATE_SHORT=$(date -u +"%Y%m%d")
 
@@ -33,11 +34,13 @@ while [[ $# -gt 0 ]]; do
         -o|--output) OUTPUT_FILE="$2"; shift 2 ;;
         -r|--repo)   REPO="$2"; shift 2 ;;
         -v|--verbose) VERBOSE=true; shift ;;
+        -a|--all) ALL_TIME=true; shift ;;
         -h|--help)
-            echo "Usage: repo-insights.sh [-r owner/repo] [-o output.md] [-v]"
+            echo "Usage: repo-insights.sh [-r owner/repo] [-o output.md] [-v] [-a]"
             echo "  -r, --repo    GitHub repo (default: auto-detect from git remote)"
             echo "  -o, --output  Output file (default: owner_repo_YYYYMMDD.md)"
             echo "  -v, --verbose Show API diagnostics on stderr"
+            echo "  -a, --all     Fetch all-time stats (paginate all issues, PRs, releases, contributors)"
             exit 0 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
@@ -54,6 +57,14 @@ gh_api() {
     local result
     result=$(gh api "$1" 2>/dev/null || echo "${2:-\{\}}")
     verbose "gh api $1 → ${#result} bytes"
+    echo "$result"
+}
+
+# Fetch ALL pages from a GitHub API list endpoint, returns merged JSON array
+gh_api_all() {
+    local result
+    result=$(gh api "$1" --paginate --slurp 2>/dev/null | jq 'flatten' 2>/dev/null || echo "${2:-[]}")
+    verbose "gh api (paginated) $1 → ${#result} bytes"
     echo "$result"
 }
 
@@ -108,12 +119,26 @@ REFERRERS=$(gh_api "repos/$REPO/traffic/popular/referrers" "[]")
 PATHS=$(gh_api "repos/$REPO/traffic/popular/paths" "[]")
 
 echo "  Fetching community data..."
-RELEASES=$(gh_api "repos/$REPO/releases?per_page=10" "[]")
-CONTRIBUTORS=$(gh_api "repos/$REPO/contributors?per_page=100" "[]")
+if [[ "$ALL_TIME" == true ]]; then
+    echo "  Fetching ALL releases..."
+    RELEASES=$(gh_api_all "repos/$REPO/releases?per_page=100" "[]")
+    echo "  Fetching ALL contributors..."
+    CONTRIBUTORS=$(gh_api_all "repos/$REPO/contributors?per_page=100" "[]")
+else
+    RELEASES=$(gh_api "repos/$REPO/releases?per_page=10" "[]")
+    CONTRIBUTORS=$(gh_api "repos/$REPO/contributors?per_page=100" "[]")
+fi
 
 echo "  Fetching issue/PR activity..."
-RECENT_ISSUES=$(gh_api "repos/$REPO/issues?state=all&per_page=30&sort=created&direction=desc" "[]")
-RECENT_PRS=$(gh_api "repos/$REPO/pulls?state=all&per_page=30&sort=created&direction=desc" "[]")
+if [[ "$ALL_TIME" == true ]]; then
+    echo "  Fetching ALL issues (this may take a while for large repos)..."
+    ISSUES_DATA=$(gh_api_all "repos/$REPO/issues?state=all&per_page=100&sort=created&direction=desc" "[]")
+    echo "  Fetching ALL pull requests..."
+    PRS_DATA=$(gh_api_all "repos/$REPO/pulls?state=all&per_page=100&sort=created&direction=desc" "[]")
+else
+    ISSUES_DATA=$(gh_api "repos/$REPO/issues?state=all&per_page=30&sort=created&direction=desc" "[]")
+    PRS_DATA=$(gh_api "repos/$REPO/pulls?state=all&per_page=30&sort=created&direction=desc" "[]")
+fi
 
 # === EXTRACT METRICS ===
 # Repo basics
@@ -154,9 +179,14 @@ fi
 verbose "Commit total: $COMMIT_TOTAL"
 
 # Activity
-RECENT_ISSUE_COUNT=$(echo "$RECENT_ISSUES" | jq '[.[] | select(.pull_request == null)] | length' 2>/dev/null || echo "0")
-RECENT_PR_COUNT=$(echo "$RECENT_PRS" | jq 'length' 2>/dev/null || echo "0")
-MERGED_PRS=$(echo "$RECENT_PRS" | jq '[.[] | select(.merged_at != null)] | length' 2>/dev/null || echo "0")
+ISSUE_COUNT=$(echo "$ISSUES_DATA" | jq '[.[] | select(.pull_request == null)] | length' 2>/dev/null || echo "0")
+PR_COUNT=$(echo "$PRS_DATA" | jq 'length' 2>/dev/null || echo "0")
+MERGED_PRS=$(echo "$PRS_DATA" | jq '[.[] | select(.merged_at != null)] | length' 2>/dev/null || echo "0")
+if [[ "$ALL_TIME" == true ]]; then
+    OPEN_ISSUES_COUNTED=$(echo "$ISSUES_DATA" | jq '[.[] | select(.pull_request == null and .state == "open")] | length' 2>/dev/null || echo "0")
+    CLOSED_ISSUES=$(echo "$ISSUES_DATA" | jq '[.[] | select(.pull_request == null and .state == "closed")] | length' 2>/dev/null || echo "0")
+    OPEN_PRS=$(echo "$PRS_DATA" | jq '[.[] | select(.state == "open")] | length' 2>/dev/null || echo "0")
+fi
 
 # === PyPI / npm stats ===
 echo "  Checking package registries..."
@@ -181,6 +211,13 @@ if [[ -n "$PYPI_DATA" ]]; then
             PYPI_DOWNLOADS_WEEK=$(echo "$PYPI_STATS" | jq -r '.data.last_week // 0' 2>/dev/null || echo "0")
             PYPI_DOWNLOADS_DAY=$(echo "$PYPI_STATS" | jq -r '.data.last_day // 0' 2>/dev/null || echo "0")
         fi
+        if [[ "$ALL_TIME" == true ]]; then
+            verbose "Fetching PyPI overall downloads..."
+            PYPI_OVERALL=$(curl -sf "https://pypistats.org/api/packages/$PKG_NAME_ENCODED/overall" 2>/dev/null || echo "")
+            if [[ -n "$PYPI_OVERALL" ]]; then
+                PYPI_DOWNLOADS_TOTAL=$(echo "$PYPI_OVERALL" | jq '[.data[] | select(.category == "without_mirrors") | .downloads] | add // 0' 2>/dev/null || echo "0")
+            fi
+        fi
     else
         verbose "PyPI package '$PKG_NAME' exists but does NOT link to $REPO — skipping"
     fi
@@ -203,6 +240,30 @@ if [[ -n "$NPM_DATA" ]] && echo "$NPM_DATA" | jq -e '.["dist-tags"]' >/dev/null 
         if [[ -n "$NPM_DL_MONTH" ]]; then
             NPM_DOWNLOADS_MONTH=$(echo "$NPM_DL_MONTH" | jq -r '.downloads // 0' 2>/dev/null || echo "0")
         fi
+        if [[ "$ALL_TIME" == true ]]; then
+            verbose "Fetching npm all-time downloads..."
+            NPM_DOWNLOADS_TOTAL=0
+            NPM_START=$(echo "$CREATED" | cut -dT -f1)
+            NPM_END=$(date -u +"%Y-%m-%d")
+            CHUNK_START="$NPM_START"
+            while [[ "$CHUNK_START" < "$NPM_END" ]]; do
+                if date -v+365d >/dev/null 2>&1; then
+                    CHUNK_END=$(date -j -v+365d -f "%Y-%m-%d" "$CHUNK_START" +"%Y-%m-%d" 2>/dev/null || echo "$NPM_END")
+                else
+                    CHUNK_END=$(date -d "$CHUNK_START + 365 days" +"%Y-%m-%d" 2>/dev/null || echo "$NPM_END")
+                fi
+                [[ "$CHUNK_END" > "$NPM_END" ]] && CHUNK_END="$NPM_END"
+                CHUNK_RESULT=$(curl -sf "https://api.npmjs.org/downloads/point/$CHUNK_START:$CHUNK_END/$PKG_NAME_ENCODED" 2>/dev/null || echo "")
+                CHUNK_DL=$(echo "$CHUNK_RESULT" | jq -r '.downloads // 0' 2>/dev/null || echo "0")
+                NPM_DOWNLOADS_TOTAL=$((NPM_DOWNLOADS_TOTAL + CHUNK_DL))
+                verbose "npm downloads $CHUNK_START:$CHUNK_END → $CHUNK_DL"
+                if date -v+1d >/dev/null 2>&1; then
+                    CHUNK_START=$(date -j -v+1d -f "%Y-%m-%d" "$CHUNK_END" +"%Y-%m-%d" 2>/dev/null || break)
+                else
+                    CHUNK_START=$(date -d "$CHUNK_END + 1 day" +"%Y-%m-%d" 2>/dev/null || break)
+                fi
+            done
+        fi
     else
         verbose "npm package '$PKG_NAME' exists but does NOT link to $REPO — skipping"
     fi
@@ -210,6 +271,12 @@ fi
 
 # === GENERATE REPORT ===
 echo "  Writing report..."
+
+if [[ "$ALL_TIME" == true ]]; then
+    PERIOD_LABEL="All Time"
+else
+    PERIOD_LABEL="Recent"
+fi
 
 cat > "$OUTPUT_FILE" << HEADER
 # $REPO_NAME
@@ -220,6 +287,7 @@ cat > "$OUTPUT_FILE" << HEADER
 |---|---|
 | **Report generated** | $DATE_NOW |
 | **Repository** | [$REPO_NAME]($REPO_URL) |
+| **Time period** | $PERIOD_LABEL |
 
 **$LANGUAGE** | $LICENSE | ${SIZE_KB} KB | Created $(echo "$CREATED" | cut -dT -f1) | Last push $(echo "$PUSHED" | cut -dT -f1)
 
@@ -269,6 +337,11 @@ echo "$VIEWS" | jq -r '.views[]? | "| \(.timestamp | split("T")[0]) | \(.count) 
 echo "" >> "$OUTPUT_FILE"
 echo "</details>" >> "$OUTPUT_FILE"
 echo "" >> "$OUTPUT_FILE"
+
+if [[ "$ALL_TIME" == true ]]; then
+    echo "> **Note:** GitHub traffic API is limited to the last 14 days regardless of report mode. This is a GitHub platform limitation." >> "$OUTPUT_FILE"
+    echo "" >> "$OUTPUT_FILE"
+fi
 
 # === REFERRERS ===
 {
@@ -336,14 +409,33 @@ echo "" >> "$OUTPUT_FILE"
             echo "| Last day | ${PYPI_DOWNLOADS_DAY:-—} | — |"
             echo "| Last week | ${PYPI_DOWNLOADS_WEEK:-—} | ${NPM_DOWNLOADS_WEEK:-—} |"
             echo "| Last month | ${PYPI_DOWNLOADS_MONTH:-—} | ${NPM_DOWNLOADS_MONTH:-—} |"
+            if [[ "$ALL_TIME" == true ]]; then
+                echo "| **Total** | **${PYPI_DOWNLOADS_TOTAL:-—}** | **${NPM_DOWNLOADS_TOTAL:-—}** |"
+            fi
         elif [[ -n "$PYPI_VERSION" ]]; then
-            echo "| PyPI | Version | Day | Week | Month |"
-            echo "|------|---------|----:|-----:|------:|"
-            echo "| [pypi.org/project/$PKG_NAME](https://pypi.org/project/$PKG_NAME/) | \`$PYPI_VERSION\` | ${PYPI_DOWNLOADS_DAY:-—} | ${PYPI_DOWNLOADS_WEEK:-—} | ${PYPI_DOWNLOADS_MONTH:-—} |"
+            if [[ "$ALL_TIME" == true ]]; then
+                echo "| PyPI | Version | Day | Week | Month | Total |"
+                echo "|------|---------|----:|-----:|------:|------:|"
+                echo "| [pypi.org/project/$PKG_NAME](https://pypi.org/project/$PKG_NAME/) | \`$PYPI_VERSION\` | ${PYPI_DOWNLOADS_DAY:-—} | ${PYPI_DOWNLOADS_WEEK:-—} | ${PYPI_DOWNLOADS_MONTH:-—} | **${PYPI_DOWNLOADS_TOTAL:-—}** |"
+            else
+                echo "| PyPI | Version | Day | Week | Month |"
+                echo "|------|---------|----:|-----:|------:|"
+                echo "| [pypi.org/project/$PKG_NAME](https://pypi.org/project/$PKG_NAME/) | \`$PYPI_VERSION\` | ${PYPI_DOWNLOADS_DAY:-—} | ${PYPI_DOWNLOADS_WEEK:-—} | ${PYPI_DOWNLOADS_MONTH:-—} |"
+            fi
         elif [[ -n "$NPM_VERSION" ]]; then
-            echo "| npm | Version | Week | Month |"
-            echo "|-----|---------|-----:|------:|"
-            echo "| [npmjs.com/package/$PKG_NAME](https://www.npmjs.com/package/$PKG_NAME) | \`$NPM_VERSION\` | ${NPM_DOWNLOADS_WEEK:-—} | ${NPM_DOWNLOADS_MONTH:-—} |"
+            if [[ "$ALL_TIME" == true ]]; then
+                echo "| npm | Version | Week | Month | Total |"
+                echo "|-----|---------|-----:|------:|------:|"
+                echo "| [npmjs.com/package/$PKG_NAME](https://www.npmjs.com/package/$PKG_NAME) | \`$NPM_VERSION\` | ${NPM_DOWNLOADS_WEEK:-—} | ${NPM_DOWNLOADS_MONTH:-—} | **${NPM_DOWNLOADS_TOTAL:-—}** |"
+            else
+                echo "| npm | Version | Week | Month |"
+                echo "|-----|---------|-----:|------:|"
+                echo "| [npmjs.com/package/$PKG_NAME](https://www.npmjs.com/package/$PKG_NAME) | \`$NPM_VERSION\` | ${NPM_DOWNLOADS_WEEK:-—} | ${NPM_DOWNLOADS_MONTH:-—} |"
+            fi
+        fi
+        if [[ "$ALL_TIME" == true ]]; then
+            echo ""
+            echo "> PyPI total covers ~180 days (pypistats.org data retention). npm total covers the full package lifetime."
         fi
         echo ""
     fi
@@ -356,11 +448,20 @@ echo "" >> "$OUTPUT_FILE"
 {
     echo "## Activity & Contributors"
     echo ""
-    echo "### Issues & PRs — Last 30 Days"
-    echo ""
-    echo "| Issues | PRs | Merged |"
-    echo "|:------:|:---:|:------:|"
-    echo "| $RECENT_ISSUE_COUNT | $RECENT_PR_COUNT | $MERGED_PRS |"
+    if [[ "$ALL_TIME" == true ]]; then
+        echo "### Issues & PRs — All Time"
+        echo ""
+        echo "| | Open | Closed/Merged | Total |"
+        echo "|--|-----:|------:|------:|"
+        echo "| Issues | $OPEN_ISSUES_COUNTED | $CLOSED_ISSUES | $ISSUE_COUNT |"
+        echo "| PRs | $OPEN_PRS | $MERGED_PRS merged | $PR_COUNT |"
+    else
+        echo "### Issues & PRs — Last 30 Days"
+        echo ""
+        echo "| Issues | PRs | Merged |"
+        echo "|:------:|:---:|:------:|"
+        echo "| $ISSUE_COUNT | $PR_COUNT | $MERGED_PRS |"
+    fi
     echo ""
 
     if [[ "$RELEASE_COUNT" -gt 0 ]]; then
@@ -368,12 +469,18 @@ echo "" >> "$OUTPUT_FILE"
         echo ""
         echo "| Tag | Date | Downloads |"
         echo "|-----|------|----------:|"
-        echo "$RELEASES" | jq -r '.[0:5][]? | "| \(.tag_name) | \(.published_at | split("T")[0]) | \([.assets[]?.download_count] | add // 0) |"' 2>/dev/null || true
-        echo ""
-        if [[ "$RELEASE_COUNT" -gt 5 ]]; then
-            echo "> Showing latest 5 of $RELEASE_COUNT releases. Total asset downloads: $RELEASE_DOWNLOADS"
+        if [[ "$ALL_TIME" == true ]]; then
+            echo "$RELEASES" | jq -r '.[]? | "| \(.tag_name) | \(.published_at | split("T")[0]) | \([.assets[]?.download_count] | add // 0) |"' 2>/dev/null || true
             echo ""
+            echo "> All $RELEASE_COUNT releases shown. Total asset downloads: $RELEASE_DOWNLOADS"
+        else
+            echo "$RELEASES" | jq -r '.[0:5][]? | "| \(.tag_name) | \(.published_at | split("T")[0]) | \([.assets[]?.download_count] | add // 0) |"' 2>/dev/null || true
+            echo ""
+            if [[ "$RELEASE_COUNT" -gt 5 ]]; then
+                echo "> Showing latest 5 of $RELEASE_COUNT releases. Total asset downloads: $RELEASE_DOWNLOADS"
+            fi
         fi
+        echo ""
     else
         echo "### Releases"
         echo ""
@@ -381,11 +488,17 @@ echo "" >> "$OUTPUT_FILE"
         echo ""
     fi
 
-    echo "### Top Contributors"
+    if [[ "$ALL_TIME" == true ]]; then
+        SHOW_TOP=25
+        echo "### Top Contributors (all $CONTRIBUTOR_COUNT)"
+    else
+        SHOW_TOP=10
+        echo "### Top Contributors"
+    fi
     echo ""
     echo "| # | Contributor | Commits |"
     echo "|--:|------------|--------:|"
-    echo "$CONTRIBUTORS" | jq -r 'to_entries | .[:10][] | "| \(.key + 1) | [@\(.value.login)](https://github.com/\(.value.login)) | \(.value.contributions) |"' 2>/dev/null || echo "| — | No data | — |"
+    echo "$CONTRIBUTORS" | jq -r "to_entries | .[:$SHOW_TOP][] | \"| \(.key + 1) | [@\(.value.login)](https://github.com/\(.value.login)) | \(.value.contributions) |\"" 2>/dev/null || echo "| — | No data | — |"
     echo ""
 } >> "$OUTPUT_FILE"
 
@@ -400,11 +513,26 @@ echo ""
 echo "Done! Report written to: $OUTPUT_FILE"
 echo ""
 echo "Quick summary:"
+if [[ "$ALL_TIME" == true ]]; then
+    echo "  Mode: ALL TIME"
+fi
 echo "  Stars: $STARS | Forks: $FORKS | Contributors: $CONTRIBUTOR_COUNT"
 echo "  Unique cloners (14d): $CLONE_UNIQUE | Unique visitors (14d): $VIEW_UNIQUE"
+if [[ "$ALL_TIME" == true ]]; then
+    echo "  Total issues: $ISSUE_COUNT | Total PRs: $PR_COUNT | Merged: $MERGED_PRS"
+    echo "  Total releases: $RELEASE_COUNT | Total contributors: $CONTRIBUTOR_COUNT"
+fi
 if [[ -n "$PYPI_VERSION" ]]; then
-    echo "  PyPI: v$PYPI_VERSION (${PYPI_DOWNLOADS_MONTH:-?} downloads/month)"
+    if [[ "$ALL_TIME" == true ]]; then
+        echo "  PyPI: v$PYPI_VERSION (${PYPI_DOWNLOADS_MONTH:-?}/month, ${PYPI_DOWNLOADS_TOTAL:-?} total)"
+    else
+        echo "  PyPI: v$PYPI_VERSION (${PYPI_DOWNLOADS_MONTH:-?} downloads/month)"
+    fi
 fi
 if [[ -n "$NPM_VERSION" ]]; then
-    echo "  npm: v$NPM_VERSION (${NPM_DOWNLOADS_MONTH:-?} downloads/month)"
+    if [[ "$ALL_TIME" == true ]]; then
+        echo "  npm: v$NPM_VERSION (${NPM_DOWNLOADS_MONTH:-?}/month, ${NPM_DOWNLOADS_TOTAL:-?} total)"
+    else
+        echo "  npm: v$NPM_VERSION (${NPM_DOWNLOADS_MONTH:-?} downloads/month)"
+    fi
 fi

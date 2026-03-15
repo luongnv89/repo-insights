@@ -64,7 +64,8 @@ cd repo-insights
 ./repo-insights.sh -r owner/repo          # Specific repo
 ./repo-insights.sh -o my-report.md        # Custom output file
 ./repo-insights.sh -v                     # Verbose mode (API diagnostics)
-./repo-insights.sh -r owner/repo -o report.md -v  # All options
+./repo-insights.sh -a                     # All-time stats (paginated)
+./repo-insights.sh -r owner/repo -a -v    # All-time for specific repo, verbose
 ```
 
 ### Options
@@ -74,7 +75,20 @@ cd repo-insights
 | `-r`, `--repo` | GitHub repo in `owner/repo` format (default: auto-detect from git remote) |
 | `-o`, `--output` | Output file path (default: `owner_repo_YYYYMMDD.md`) |
 | `-v`, `--verbose` | Show API diagnostics on stderr |
+| `-a`, `--all` | Fetch all-time stats (paginate all issues, PRs, releases, contributors) |
 | `-h`, `--help` | Show help |
+
+### All-Time Mode
+
+Use `-a` / `--all` to fetch complete repository history:
+
+- **Issues & PRs** — all issues and PRs (paginated), with open/closed/merged breakdown
+- **Releases** — every release with download counts
+- **Contributors** — full contributor list (top 25 shown in report)
+- **Package downloads** — PyPI total (~180 day window), npm lifetime total
+- **Traffic** — still limited to 14 days (GitHub API restriction)
+
+> All-time mode makes more API requests and may take longer for large repositories.
 
 ## Requirements
 
@@ -94,14 +108,14 @@ The generated markdown report includes:
 | Section | What it shows |
 |---------|---------------|
 | **Key Metrics** | Stars, forks, watchers, contributors, open issues, total commits |
-| **Traffic** | Page views + clones with unique counts (last 14 days), collapsible daily breakdown |
+| **Traffic** | Page views + clones with unique counts (last 14 days — GitHub API limit) |
 | **Top Referrers** | Where your visitors come from (shown only when data exists) |
 | **Popular Content** | Most visited pages in your repo (shown only when data exists) |
 | **Real Users vs Bots** | Confidence-rated estimate of actual users |
-| **Package Downloads** | PyPI and npm versions + download counts (only if package links back to repo) |
-| **Activity** | Issues, PRs, merged PRs (last 30 days) |
-| **Releases** | Latest releases with per-release download counts |
-| **Top Contributors** | Ranked by commit count (top 10) |
+| **Package Downloads** | PyPI and npm versions + download counts; all-time totals with `-a` |
+| **Activity** | Issues, PRs, merged PRs (last 30 or all-time with `-a`) |
+| **Releases** | Latest releases with download counts (top 10 or all with `-a`) |
+| **Top Contributors** | Ranked by commit count (top 10 or top 25 with `-a`) |
 
 ## Example Output
 

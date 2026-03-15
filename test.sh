@@ -80,6 +80,24 @@ VERBOSE_OUT=$(bash "$SCRIPT" -v -o /tmp/repo-insights-verbose-$$.md 2>&1)
 if echo "$VERBOSE_OUT" | grep -q '\[verbose\]'; then pass "verbose outputs diagnostics"; else fail "verbose outputs diagnostics"; fi
 rm -f "/tmp/repo-insights-verbose-$$.md"
 
+# Test 9: --all flag in help text
+echo "Test: --all in help"
+HELP_ALL=$(bash "$SCRIPT" -h 2>&1)
+if echo "$HELP_ALL" | grep -q '\-a'; then pass "help mentions -a flag"; else fail "help mentions -a flag"; fi
+
+# Test 10: --all flag accepted
+echo "Test: --all flag"
+ALL_OUTPUT="/tmp/repo-insights-all-$$.md"
+bash "$SCRIPT" -a -o "$ALL_OUTPUT" >/dev/null 2>&1
+if [[ $? -eq 0 ]]; then pass "--all exits 0"; else fail "--all exits 0"; fi
+if [[ -f "$ALL_OUTPUT" ]]; then pass "--all output file exists"; else fail "--all output file exists"; fi
+
+# Test 11: --all report has All Time markers
+echo "Test: all-time report content"
+if grep -q 'All Time' "$ALL_OUTPUT" 2>/dev/null; then pass "report shows All Time period"; else fail "report shows All Time period"; fi
+if grep -q '### Issues & PRs — All Time' "$ALL_OUTPUT" 2>/dev/null; then pass "issues section says All Time"; else fail "issues section says All Time"; fi
+rm -f "$ALL_OUTPUT"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 
